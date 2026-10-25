@@ -1,0 +1,17 @@
+﻿ollama>=0.5
+python-dotenv
+numpy
+sounddevice
+openwakeword
+onnxruntime
+faster-whisper
+edge-tts>=7.3.1  # 7.2.8 got 403 from Microsoft (2026-10-15)
+pygame
+pyautogui
+psutil
+mss
+pycaw; sys_platform == "win32"
+PySide6
+playwright
+qrcode  # python -m remote.pair (optional: prints the pairing QR code)
+cryptography  # Jarvis Remote https certificate (the phone mic needs a secure page)

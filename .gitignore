@@ -1,0 +1,17 @@
+# Python / tools
+.venv/
+__pycache__/
+*.pyc
+hud.log
+
+# Secrets and settings
+.env
+
+# Personal data: keep out of git (and out of anything you push publicly)
+about_me.txt
+notes.txt
+reminders.json
+apps_found.txt
+bench/results/
+data/
+samples/

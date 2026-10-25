@@ -1,0 +1,550 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0a030a">
+<meta name="referrer" content="no-referrer">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/icon.svg">
+<title>__NAME__</title>
+<style>
+  /* the same palette as the PC HUD (hud.py): PINK 255,77,166 · VIOLET 186,85,255 · TEXT 255,236,247 · DIM 214,160,190 */
+  :root { --cyan:rgb(255,77,166); --cyan-a:rgba(255,77,166,.22); --text:rgb(255,236,247); --dim:rgb(214,160,190);
+          --amber:rgb(255,170,60); --bg:#0a030a;
+          --font:"Bahnschrift SemiCondensed","Bahnschrift","Roboto Condensed","sans-serif-condensed","Arial Narrow",sans-serif; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--text); font-family:var(--font); overflow:hidden;
+               -webkit-user-select:none; user-select:none; }
+  #hud { position:fixed; inset:0; width:100%; height:100%; display:block; }
+  #ui { position:fixed; inset:0; display:flex; flex-direction:column; pointer-events:none;
+        padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
+  #ui > * { pointer-events:auto; }
+  #spacer { flex:0 0 auto; pointer-events:none !important; }
+  #talk { position:absolute; border-radius:50%; background:transparent; border:none; pointer-events:auto; }
+  #feed { flex:1; overflow-y:auto; padding:0 26px 6px; display:flex; flex-direction:column; align-items:stretch; min-height:0; }
+  #feed > :first-child { margin-top:auto; }   /* the conversation sits just above the controls */
+  #cards { text-align:center; min-height:4px; }
+  .card { color:var(--cyan); font-size:12px; font-weight:700; letter-spacing:1.5px; line-height:18px; transition:opacity .6s, transform .2s; }
+  .lbl { font-size:11px; font-weight:700; letter-spacing:2px; margin-top:10px; }
+  #you .lbl { color:var(--dim); } #you .txt { color:rgba(230,248,255,.67); font-size:15px; line-height:1.3; }
+  #jv { border-left:2px solid rgba(255,77,166,.63); padding-left:8px; margin-top:12px; }
+  #jv .lbl { color:var(--cyan); margin-top:0; } #jv .txt { font-size:18px; font-weight:700; line-height:1.3; }
+  #jv.q { border-color:var(--amber); } #jv.q .lbl { color:var(--amber); }
+  .hide { display:none !important; }
+  #note { color:var(--amber); font-size:13px; letter-spacing:.5px; margin-top:8px; text-align:center; }
+  #yn { display:flex; gap:10px; margin-top:10px; pointer-events:auto; }
+  /* controls: cut-corner panels with the HUD's bracket look */
+  .hb { position:relative; background:rgba(2,8,16,.8); color:var(--text); border:none; font:700 12px var(--font);
+        letter-spacing:1.5px; padding:10px 4px; min-height:42px; text-transform:uppercase;
+        clip-path:polygon(8px 0,calc(100% - 8px) 0,100% 8px,100% calc(100% - 8px),calc(100% - 8px) 100%,8px 100%,0 calc(100% - 8px),0 8px); }
+  .hb::before { content:""; position:absolute; inset:0; border:1px solid rgba(255,77,166,.35);
+                clip-path:inherit; pointer-events:none; }
+  .hb:active { background:rgba(255,77,166,.18); }
+  .hb.go { color:var(--cyan); } .hb.warn { color:var(--amber); }
+  #yn .hb { flex:1; font-size:14px; }
+  #bar { display:flex; gap:8px; align-items:center; padding:9px 16px 12px; }
+  #text { flex:1; min-width:0; background:transparent; border:none; border-bottom:1px solid rgba(255,77,166,.35);
+          color:var(--text); font:15px var(--font); letter-spacing:.5px; padding:9px 2px; outline:none; -webkit-user-select:text; user-select:text; }
+  #text::placeholder { color:var(--dim); letter-spacing:2px; font-size:12px; }
+  #text:focus { border-bottom-color:var(--cyan); }
+  #pcv { font-size:10px; letter-spacing:1.5px; padding:10px 8px; min-height:38px; }
+  #pcv.on, #hw.on { color:var(--cyan); }
+  #hw, #pcv { font-size:10px; letter-spacing:1px; padding:10px 6px; min-height:38px; }
+  #shot { position:fixed; inset:0; background:rgba(1,5,11,.94); display:flex; flex-direction:column; align-items:center;
+          justify-content:center; padding:20px; gap:14px; }
+  #shot img { max-width:100%; max-height:75vh; border:1px solid rgba(255,77,166,.35); }
+  #shot .lbl { color:var(--cyan); }
+</style>
+</head>
+<body>
+<canvas id="hud"></canvas>
+<div id="ui">
+  <div id="spacer"></div>
+  <button id="talk" aria-label="Talk to __NAME__"></button>
+  <div id="feed">
+    <div id="cards"></div>
+    <div id="you" class="hide"><div class="lbl">YOU</div><div class="txt"></div></div>
+    <div id="jv" class="hide"><div class="lbl">__NAME_UPPER__</div><div class="txt"></div></div>
+    <div id="yn" class="hide"><button class="hb go" data-yes="1">YES</button><button class="hb warn" data-yes="0">NO</button></div>
+    <div id="note" class="hide"></div>
+  </div>
+  <form id="bar" autocomplete="off">
+    <input type="text" id="text" placeholder="› TYPE A COMMAND" enterkeyhint="send">
+    <button class="hb" type="button" id="hw">HEY __NAME_UPPER__ ON</button>
+    <button class="hb" type="button" id="pcv">PC VOICE OFF</button>
+    <button class="hb go" type="submit">SEND</button>
+  </form>
+</div>
+<div id="shot" class="hide"><div class="lbl">YOUR SCREEN · TAP TO CLOSE</div><img alt="PC screen"></div>
+<script>
+"use strict";
+const NAME = "__NAME__";
+const $ = (id) => document.getElementById(id);
+
+// ================================================================= the reactor (port of hud.py, same numbers)
+const CYAN = [255, 77, 166], DEEP = [186, 85, 255], TEXT = [255, 236, 247], DIM = [214, 160, 190], AMBER = [255, 170, 60];
+const LABELS = { listening: "LISTENING", thinking: "PROCESSING", speaking: "RESPONDING", idle: "STANDBY", offline: "OFFLINE" };
+const rgba = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${Math.max(0, Math.min(255, a)) / 255})`;
+const FONT = getComputedStyle(document.documentElement).getPropertyValue("--font");
+const hud = { state: "idle", level: 0, target: 0, spin: 0, boot: 0, wave: new Array(72).fill(0), cpu: null, mem: null, stat: "",
+              online: false, last: performance.now() };
+const cv = $("hud"), g = cv.getContext("2d");
+let W = 0, H = 0, RX = 0, RY = 0, S = 1;
+
+function layout() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  W = innerWidth; H = innerHeight;
+  cv.width = W * dpr; cv.height = H * dpr; g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  S = Math.min(W * 0.38, H * 0.16) / 132;            // outer ring radius 132 in hud.py units (room left for the text)
+  RX = W / 2; RY = 104 + 146 * S;                     // under the title and readouts
+  const t = $("talk"), r = 140 * S;
+  t.style.left = (RX - r) + "px"; t.style.top = (RY - r) + "px"; t.style.width = t.style.height = (2 * r) + "px";
+  $("spacer").style.height = (RY + 172 * S) + "px";   // status label sits under the reactor; text starts after it
+}
+addEventListener("resize", layout); layout();
+
+function frame(now) {
+  const dt = Math.min((now - hud.last) / 1000, 0.1); hud.last = now;
+  const t = now / 1000, st = hud.state;
+  if (st === "speaking") hud.target = 0.35 + 0.65 * Math.abs(Math.sin(t * 5.3) * Math.sin(t * 2.1 + 1));
+  if (st === "thinking" || st === "idle" || st === "offline") hud.target = 0;
+  hud.level += (hud.target - hud.level) * Math.min(1, dt * 14);
+  hud.boot = Math.min(1, hud.boot + dt * 1.6);
+  hud.spin = (hud.spin + dt * ({ thinking: 220, listening: 24, speaking: 45 }[st] || 14)) % 360;
+  hud.wave.shift(); hud.wave.push(st === "listening" ? hud.level * (0.55 + Math.random() * 0.45) : 0);
+  typewriter(dt);
+  try { draw(t); } catch (e) { console.warn("draw", e); }   // one bad frame must never stop the reactor
+  requestAnimationFrame(frame);
+}
+
+function draw(t) {
+  const accent = hud.state === "thinking" ? DEEP : hud.state === "offline" ? DIM : CYAN;
+  const boot = 1 - Math.pow(1 - hud.boot, 3);
+  g.clearRect(0, 0, W, H);
+  // backdrop: near-black, faint grid, glow behind the reactor (big-screen mode)
+  g.fillStyle = "#0a030a"; g.fillRect(0, 0, W, H);
+  g.strokeStyle = rgba(accent, 10); g.lineWidth = 1; g.beginPath();
+  for (let x = 0; x < W; x += 48) { g.moveTo(x + .5, 0); g.lineTo(x + .5, H); }
+  for (let y = 0; y < H; y += 48) { g.moveTo(0, y + .5); g.lineTo(W, y + .5); }
+  g.stroke();
+  const vg = g.createRadialGradient(RX, RY, 0, RX, RY, H * 0.55);
+  vg.addColorStop(0, rgba(accent, 26)); vg.addColorStop(1, rgba(accent, 0));
+  g.fillStyle = vg; g.fillRect(0, 0, W, H);
+  // screen-corner brackets
+  const m = 14, L = 44;
+  g.strokeStyle = rgba(accent, 200 * boot); g.lineWidth = 2.5; g.beginPath();
+  for (const [x, y, dx, dy] of [[m, m, 1, 1], [W - m, m, -1, 1], [m, H - m, 1, -1], [W - m, H - m, -1, -1]]) {
+    g.moveTo(x + dx * L, y); g.lineTo(x, y); g.lineTo(x, y + dy * L);
+  }
+  g.stroke();
+  // title
+  g.textAlign = "center"; g.textBaseline = "top";
+  g.fillStyle = rgba(TEXT, 235); g.font = `700 20px ${FONT}`; spaced(NAME.toUpperCase().split("").join("."), W / 2, 26, 9);
+  g.fillStyle = rgba(DIM, 200 * boot); g.font = `9px ${FONT}`; spaced("YOUR PERSONAL AI COMPANION", W / 2, 52, 2.2);
+  g.strokeStyle = rgba(accent, 120); g.lineWidth = 1; g.beginPath(); g.moveTo(W / 2 - 70 * boot, 68); g.lineTo(W / 2 + 70 * boot, 68); g.stroke();
+  // readouts: time/date left, CPU/MEM/RESP right (real numbers only)
+  const d = new Date();
+  g.textAlign = "left"; g.fillStyle = rgba(TEXT, 225 * boot); g.font = `700 18px ${FONT}`;
+  g.fillText(d.toTimeString().slice(0, 8), 26, 80);
+  g.fillStyle = rgba(DIM, 220 * boot); g.font = `10px ${FONT}`;
+  spacedLeft(d.toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" }).toUpperCase().replace(",", ""), 26, 102, 1.5);
+  const rows = [];
+  if (hud.cpu != null) rows.push(["CPU", `${Math.round(hud.cpu)}%`, hud.cpu], ["MEM", `${Math.round(hud.mem)}%`, hud.mem]);
+  if (hud.stat) rows.push(["RESP", hud.stat, 0]);
+  g.textAlign = "right"; g.font = `700 10px ${FONT}`;
+  rows.forEach(([n, v, pct], i) => {
+    const y = 80 + i * 17;
+    g.fillStyle = rgba(pct >= 90 ? AMBER : DIM, 220 * boot); g.fillText(`${n} ${v}`, W - 26, y);
+    if (n !== "RESP") {   // thin load bar, amber when genuinely high
+      g.strokeStyle = rgba(accent, 50); g.lineWidth = 2; g.beginPath(); g.moveTo(W - 26 - 92, y + 13); g.lineTo(W - 26, y + 13); g.stroke();
+      g.strokeStyle = rgba(pct >= 90 ? AMBER : accent, 220); g.beginPath(); g.moveTo(W - 26 - 92, y + 13);
+      g.lineTo(W - 26 - 92 + 92 * Math.min(pct, 100) / 100, y + 13); g.stroke();
+    }
+  });
+  // the reactor, in hud.py's own units around (0,0)
+  g.save(); g.translate(RX, RY); g.scale(S, S);
+  reactor(accent, boot, t);
+  g.restore();
+  // status line under the reactor, with its light (blinks while processing)
+  const label = LABELS[hud.state] || "STANDBY", ly = RY + 146 * S;
+  g.font = `700 11px ${FONT}`; g.textAlign = "center"; g.fillStyle = rgba(accent, 230);
+  const w = spaced(label, RX, ly, 4);
+  const on = !(hud.state === "thinking" && Math.floor(t * 3) % 2);
+  g.beginPath(); g.arc(RX - w / 2 - 12, ly + 6, 3.5, 0, 7);
+  g.strokeStyle = rgba(accent, 230); g.lineWidth = 1.2; g.stroke(); if (on) { g.fillStyle = rgba(accent, 230); g.fill(); }
+  if (hud.state === "idle" && hud.online) {
+    g.fillStyle = rgba(DIM, 170); g.font = `9px ${FONT}`;
+    spaced(mode === "wake" ? "SAY “HEY " + NAME.toUpperCase() + "”" : "TAP THE REACTOR TO START", RX, ly + 18, 2);
+  }
+}
+
+function reactor(accent, boot, t) {
+  const lvl = hud.level, rad = (deg) => deg * Math.PI / 180;
+  // soft glow breathing with the voice
+  const gr = Math.max(1, (150 + 30 * lvl) * boot), gl = g.createRadialGradient(0, 0, 0, 0, 0, gr);
+  gl.addColorStop(0, rgba(accent, 90)); gl.addColorStop(0.45, rgba(accent, 28)); gl.addColorStop(1, rgba(accent, 0));
+  g.fillStyle = gl; g.beginPath(); g.arc(0, 0, gr, 0, 7); g.fill();
+  // outer ring + four notch markers
+  const R = 132 * boot;
+  g.strokeStyle = rgba(accent, 110); g.lineWidth = 1.2; g.beginPath(); g.arc(0, 0, R, 0, 7); g.stroke();
+  g.fillStyle = rgba(accent, 200);
+  for (let k = 0; k < 4; k++) {
+    const a = rad(k * 90 + 45), sd = a + Math.PI / 2;
+    const bx = Math.cos(a) * (R + 2), by = Math.sin(a) * (R + 2);
+    g.beginPath(); g.moveTo(Math.cos(a) * (R - 7), Math.sin(a) * (R - 7));
+    g.lineTo(bx + Math.cos(sd) * 5, by + Math.sin(sd) * 5); g.lineTo(bx - Math.cos(sd) * 5, by - Math.sin(sd) * 5); g.fill();
+  }
+  // thinking: radar sweep
+  if (hud.state === "thinking" && g.createConicGradient) {
+    const sw = g.createConicGradient(rad(hud.spin * 1.4), 0, 0);
+    sw.addColorStop(0, rgba(accent, 110)); sw.addColorStop(0.12, rgba(accent, 0)); sw.addColorStop(1, rgba(accent, 0));
+    g.fillStyle = sw; g.beginPath(); g.arc(0, 0, Math.max(0, R - 2), 0, 7); g.fill();
+  }
+  // dial: 72 ticks, every 6th long, turning slowly the other way
+  g.save(); g.rotate(rad(-hud.spin * 0.35));
+  for (let k = 0; k < Math.floor(72 * boot); k++) {
+    const long = k % 6 === 0, a = rad(k * 5), r0 = long ? 108 : 112;
+    g.strokeStyle = rgba(accent, long ? 210 : 90); g.lineWidth = long ? 2 : 1;
+    g.beginPath(); g.moveTo(Math.cos(a) * r0, Math.sin(a) * r0); g.lineTo(Math.cos(a) * 118, Math.sin(a) * 118); g.stroke();
+  }
+  g.restore();
+  // segmented arcs at two radii, counter-rotating (fast while thinking)
+  [[96, 3.0, 3, 70, 1], [84, 1.6, 5, 38, -1]].forEach(([r, w, segs, span, dir], i) => {
+    g.strokeStyle = rgba(accent, 230 - i * 70); g.lineWidth = w; g.lineCap = "butt";
+    const start = hud.spin * (1 + i * 0.6) * dir;
+    for (let s = 0; s < segs; s++) { const a0 = start + s * 360 / segs; g.beginPath(); g.arc(0, 0, r, rad(a0), rad(a0 + span * boot)); g.stroke(); }
+  });
+  // voice ring: listening = live ripple, speaking = radial equalizer, otherwise a calm circle
+  const base = 64;
+  if (hud.state === "listening") {
+    const n = hud.wave.length; g.beginPath();
+    for (let k = 0; k <= n; k++) {
+      let v = 0; for (const dd of [-2, -1, 0, 1, 2]) v += hud.wave[((k + dd) % n + n) % n]; v /= 5;
+      const a = rad(k * 360 / n + hud.spin), r = base + 3 + 22 * v;
+      k ? g.lineTo(Math.cos(a) * r, Math.sin(a) * r) : g.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    g.strokeStyle = rgba(accent, 235); g.lineWidth = 2; g.stroke();
+  } else if (hud.state === "speaking") {
+    g.strokeStyle = rgba(accent, 220); g.lineWidth = 2.4;
+    for (let k = 0; k < 48; k++) {
+      const a = rad(k * 360 / 48 + hud.spin * 0.4), wob = 0.5 + 0.5 * Math.sin(t * 9 + k * 0.9) * Math.sin(t * 4.3 + k * 0.37);
+      const len = 4 + 24 * lvl * wob;
+      g.beginPath(); g.moveTo(Math.cos(a) * base, Math.sin(a) * base); g.lineTo(Math.cos(a) * (base + len), Math.sin(a) * (base + len)); g.stroke();
+    }
+  } else { g.strokeStyle = rgba(accent, 120); g.lineWidth = 1.2; g.beginPath(); g.arc(0, 0, base, 0, 7); g.stroke(); }
+  // arc-reactor coil: 10 segments
+  g.save(); g.rotate(rad(hud.spin * 0.6));
+  g.strokeStyle = rgba(accent, 150 + 100 * lvl); g.lineWidth = 7;
+  for (let k = 0; k < 10; k++) { g.beginPath(); g.arc(0, 0, 48, rad(k * 36), rad(k * 36 + 26 * boot)); g.stroke(); }
+  g.restore();
+  g.strokeStyle = rgba(accent, 160); g.lineWidth = 1; g.beginPath(); g.arc(0, 0, 40, 0, 7); g.stroke();
+  // core: hot white centre fading to the accent
+  const cr = Math.max(1, (30 + 6 * lvl + 1.5 * Math.sin(t * 2.2)) * boot), cg = g.createRadialGradient(0, 0, 0, 0, 0, cr);
+  cg.addColorStop(0, "rgba(255,255,255,1)"); cg.addColorStop(0.35, "rgba(255,214,236,.94)");
+  cg.addColorStop(0.75, rgba(accent, 220)); cg.addColorStop(1, rgba(accent, 40));
+  g.fillStyle = cg; g.beginPath(); g.arc(0, 0, cr, 0, 7); g.fill();
+}
+
+function spaced(text, cx, y, sp) {   // letter-spaced text centred on cx (canvas letterSpacing isn't everywhere)
+  const w = [...text].reduce((s, ch) => s + g.measureText(ch).width + sp, -sp);
+  let x = cx - w / 2; const al = g.textAlign; g.textAlign = "left";
+  for (const ch of text) { g.fillText(ch, x, y); x += g.measureText(ch).width + sp; }
+  g.textAlign = al; return w;
+}
+function spacedLeft(text, x, y, sp) { for (const ch of text) { g.fillText(ch, x, y); x += g.measureText(ch).width + sp; } }
+requestAnimationFrame(frame);
+
+// ================================================================= conversation text (YOU / JARVIS, typewriter like the PC)
+const tw = { text: "", shown: 0, speed: 55 };   // speed: characters per second (her voice's pace while she speaks)
+function setState(s) { hud.state = s; }
+function you(text) { $("you").classList.toggle("hide", !text); $("you").querySelector(".txt").textContent = text ? "“" + text + "”" : ""; }
+function reply(text, question) {
+  tw.text = text || ""; tw.shown = 0;
+  $("jv").classList.toggle("hide", !text); $("jv").classList.toggle("q", !!question);
+}
+function typewriter(dt) {
+  if (tw.shown >= tw.text.length) return;
+  tw.shown = Math.min(tw.text.length, tw.shown + dt * tw.speed);
+  $("jv").querySelector(".txt").textContent = tw.text.slice(0, Math.floor(tw.shown)) + (tw.shown < tw.text.length ? "█" : "");
+}
+function cards(list) {
+  const box = $("cards"); box.innerHTML = "";
+  (list || []).slice(-3).forEach((c, i) => {
+    const d = document.createElement("div"); d.className = "card"; d.textContent = `[ ✓ ${c.toUpperCase().slice(0, 30)} ]`;
+    d.style.opacity = 0; d.style.transform = "translateY(4px)"; box.appendChild(d);
+    setTimeout(() => { d.style.opacity = 1; d.style.transform = ""; }, 60 + i * 120);
+    setTimeout(() => { d.style.opacity = 0; }, 7000);
+  });
+}
+function note(text) { $("note").textContent = text || ""; $("note").classList.toggle("hide", !text); }
+
+// ================================================================= talking to the PC
+let key = "";
+try {
+  const mm = location.hash.match(/k=([\w-]+)/);
+  if (mm) { localStorage.setItem("jarvisKey", mm[1]); history.replaceState(null, "", location.pathname); }
+  key = localStorage.getItem("jarvisKey") || "";
+} catch (e) {}
+let pcVoice = false;
+try { pcVoice = localStorage.getItem("jarvisSpeak") === "1"; } catch (e) {}
+function showPcv() { $("pcv").textContent = pcVoice ? "PC VOICE ON" : "PC VOICE OFF"; $("pcv").classList.toggle("on", pcVoice); }
+$("pcv").onclick = () => { pcVoice = !pcVoice; try { localStorage.setItem("jarvisSpeak", pcVoice ? "1" : "0"); } catch (e) {} showPcv(); };
+showPcv();
+
+async function api(path, body, raw) {
+  const headers = { "X-Jarvis-Key": key };
+  if (body && !raw) headers["Content-Type"] = "application/json";
+  const r = await fetch(path, { method: body ? "POST" : "GET", headers, body: raw ? body : body ? JSON.stringify(body) : undefined });
+  if (r.status === 401) throw new Error("This phone isn't paired. On the PC run: python -m remote.pair");
+  if (!r.ok) throw new Error("The PC said " + r.status);
+  return r;
+}
+function failed(e) { reply(e.message.includes("fetch") ? "I can't reach the PC. Is " + NAME + " running?" : e.message); }
+
+// a reply (or question) from the PC: action tags, text, response time, voice
+function show(msg) {
+  if (msg.cards) cards(msg.cards);
+  if (msg.stat) hud.stat = msg.stat;
+  reply(msg.shown || msg.question || msg.reply || "", !!msg.question);   // Tamil mode: the Tamil he hears
+  pending = msg.question ? msg.turn : null;
+  $("yn").classList.toggle("hide", !msg.question);
+}
+// ---------------------------------------------------------------- Jarvis's voice on the phone
+const player = new Audio();
+let speaking = false;
+async function play(url) {
+  if (!url) return;
+  try {
+    const blob = await (await api(url)).blob();
+    player.src = URL.createObjectURL(blob); setState("speaking"); speaking = true;
+    // type the reply at the speed she says it: the text finishes when her voice does (it raced ahead before)
+    player.onloadedmetadata = () => {
+      if (isFinite(player.duration) && player.duration > 0.5 && tw.text) {
+        tw.speed = Math.max(8, tw.text.length / player.duration * 1.05); tw.shown = 0;
+      }
+    };
+    await player.play();
+    await new Promise((res) => { player.onended = res; player.onerror = res; });
+  } catch (e) {}
+  finally {
+    speaking = false;
+    player.removeAttribute("src"); player.load();          // nothing left in the player to replay (a reply played twice)
+    await new Promise((r) => setTimeout(r, 400));          // let his room go quiet before listening again
+    seg.reset();
+  }
+}
+function unlockAudio() {   // the first tap allows sound: with a silent clip, never the last reply
+  player.src = URL.createObjectURL(toWav([new Float32Array(800)]));
+  player.play().catch(() => {});
+}
+function chime(freq = 1320, dur = 0.12, vol = 0.12) {   // the PC's soft blip
+  if (!actx) return;
+  const o = actx.createOscillator(), gn = actx.createGain(), t = actx.currentTime;
+  o.frequency.value = freq; gn.gain.setValueAtTime(vol, t); gn.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  o.connect(gn); gn.connect(actx.destination); o.start(t); o.stop(t + dur);
+}
+
+// ---------------------------------------------------------------- the mic: raw sound, cut into what he says
+// While the page is open (after one tap) it listens like the PC: each thing said in the room is checked on the PC
+// for "Jarvis" by the PC's own wake-word detector; nothing else happens with it. A 0.4 s pre-roll keeps the
+// "Hey" that starts before the level rises.
+let stream = null, actx = null, node = null, wakeLock = null, pending = null;
+let mode = "off";      // off | wake (waiting for "Hey Jarvis") | command (talking to Jarvis) | busy (PC working / speaking)
+let handsFree = true;
+try { handsFree = localStorage.getItem("jarvisWake") !== "0"; } catch (e) {}
+const RATE = 16000;
+const seg = { pre: [], preLen: 0, cur: null, len: 0, quiet: 0, loud: 0, floor: 0.01, waitUntil: 0,
+              reset() { this.pre = []; this.preLen = 0; this.cur = null; this.len = 0; this.quiet = 0; this.loud = 0; } };
+const WORKLET = `class Tap extends AudioWorkletProcessor {
+  constructor() { super(); this.b = []; this.n = 0; }
+  process(inputs) {
+    const c = inputs[0] && inputs[0][0];
+    if (c) { this.b.push(c.slice(0)); this.n += c.length;
+      if (this.n >= 1024) { const out = new Float32Array(this.n); let o = 0;
+        for (const x of this.b) { out.set(x, o); o += x.length; }
+        this.port.postMessage(out, [out.buffer]); this.b = []; this.n = 0; } }
+    return true; } }
+registerProcessor("tap", Tap);`;
+
+async function micOn() {
+  if (stream) return true;
+  if (!window.isSecureContext || !navigator.mediaDevices) {
+    note("The phone mic needs the secure link (python -m remote.pair on the PC). Typing works meanwhile.");
+    return false;
+  }
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }); }
+  catch (e) { note("Microphone blocked: allow it for this page in Chrome's site settings."); return false; }
+  actx = new (window.AudioContext || window.webkitAudioContext)();
+  await actx.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET], { type: "application/javascript" })));
+  node = new AudioWorkletNode(actx, "tap");
+  actx.createMediaStreamSource(stream).connect(node);
+  node.connect(actx.destination);            // outputs silence; keeps the graph running
+  node.port.onmessage = (e) => onSound(e.data);
+  try { wakeLock = await navigator.wakeLock.request("screen"); } catch (e) {}
+  note("");
+  return true;
+}
+function micOff() {
+  if (stream) stream.getTracks().forEach((t) => t.stop());   // the phone's mic light goes off
+  if (actx) actx.close().catch(() => {});
+  stream = actx = node = null; mode = "off"; seg.reset();
+  if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+}
+
+function onSound(chunk) {
+  if (!actx) return;
+  const ratio = actx.sampleRate / RATE, n = Math.floor(chunk.length / ratio), pcm = new Float32Array(n);
+  for (let i = 0; i < n; i++) {               // to 16 kHz, averaging (a simple low-pass for speech)
+    const a = Math.floor(i * ratio), b = Math.max(a + 1, Math.floor((i + 1) * ratio)); let s = 0;
+    for (let j = a; j < b; j++) s += chunk[j]; pcm[i] = s / (b - a);
+  }
+  let e = 0; for (const v of pcm) e += v * v;
+  const l = Math.sqrt(e / (n || 1));
+  if (mode === "command") hud.target = Math.min(1, l * 9);    // the reactor's ripple follows his voice
+  if ((mode !== "wake" && mode !== "command") || speaking) return;   // PC working or Jarvis talking: not listening
+  const thr = Math.max(0.012, seg.floor * 3);
+  if (!seg.cur) {
+    seg.pre.push(pcm); seg.preLen += n;
+    while (seg.preLen - seg.pre[0].length > 0.4 * RATE) seg.preLen -= seg.pre.shift().length;
+    if (l > thr) {
+      if (++seg.loud >= 3) { seg.cur = seg.pre; seg.len = seg.preLen; seg.pre = []; seg.preLen = 0; seg.quiet = 0; }
+    } else {
+      seg.loud = 0; seg.floor = seg.floor * 0.98 + l * 0.02;   // room noise, adapting
+      if (mode === "command" && performance.now() > seg.waitUntil) backToWake();   // he said nothing: done
+    }
+    return;
+  }
+  seg.cur.push(pcm); seg.len += n;
+  seg.quiet = l > thr ? 0 : seg.quiet + n;
+  const endQuiet = (mode === "wake" ? 0.5 : 0.9) * RATE, maxLen = (mode === "wake" ? 12 : 20) * RATE;
+  if (seg.quiet >= endQuiet || seg.len >= maxLen) { const clip = seg.cur; seg.reset(); handle(clip); }
+}
+
+function toWav(chunks) {   // 16 kHz mono 16-bit WAV
+  const total = chunks.reduce((s, c) => s + c.length, 0), buf = new ArrayBuffer(44 + total * 2), v = new DataView(buf);
+  const str = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  str(0, "RIFF"); v.setUint32(4, 36 + total * 2, true); str(8, "WAVE"); str(12, "fmt ");
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, RATE, true);
+  v.setUint32(28, RATE * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); str(36, "data"); v.setUint32(40, total * 2, true);
+  let o = 44;
+  for (const c of chunks) for (const x of c) { v.setInt16(o, Math.max(-1, Math.min(1, x)) * 0x7fff, true); o += 2; }
+  return new Blob([buf], { type: "audio/wav" });
+}
+
+// one thing he said: a wake check, a command, or the answer to Jarvis's question
+const BYE = /^(?:ok(?:ay)?[, ]*)?(?:thanks?|thank you|that'?s all|that is all|bye|good ?bye|nothing else|never mind|go to sleep)\b/i;
+async function handle(clip) {
+  const was = mode;
+  mode = "busy";
+  if (was === "command") { setState("thinking"); hud.target = 0; }
+  const q = [];
+  if (was === "wake") q.push("wake=1");
+  if (was === "command" && pending) q.push("turn=" + pending);
+  if (pcVoice) q.push("speak=1");
+  let msg;
+  try { msg = await (await api("/api/voice?" + q.join("&"), toWav(clip), true)).json(); }
+  catch (e) { failed(e); return backToWake(); }
+  if (msg.error) { reply(msg.error); return backToWake(); }
+  if (was === "wake" && !msg.wake) { mode = "wake"; return; }        // just talk in the room
+  if (!msg.heard) {
+    if (was === "wake") return startCommand();                     // "Hey Jarvis" alone: chime, listen
+    if (!msg.echo) reply("I didn't catch that.");
+    return startCommand(true);
+  }
+  const heard = msg.heard;
+  setState("thinking"); you(heard);
+  try { msg = await follow(msg, true); } catch (e) { failed(e); return backToWake(); }
+  show(msg);
+  await play(msg.audio);
+  if (!msg.question && BYE.test(heard)) return backToWake();
+  startCommand(true);                                              // follow-up window, like on the PC
+}
+function startCommand(followUp) {
+  mode = "command"; seg.reset(); seg.waitUntil = performance.now() + 6000;
+  setState("listening");
+  followUp ? chime(660, 0.1, 0.08) : chime();
+}
+function backToWake() {
+  seg.reset(); hud.target = 0;
+  setState(hud.online ? "idle" : "offline");
+  if (handsFree && stream) mode = "wake"; else micOff();
+}
+
+$("talk").onclick = async () => {
+  unlockAudio();
+  if (!hud.online) { failed(new Error("fetch")); return; }
+  if (!stream && !(await micOn())) return;
+  if (actx.state === "suspended") await actx.resume();
+  if (mode === "command") return backToWake();   // tap while listening = stop
+  if (mode !== "busy") startCommand();
+};
+function showWake() { $("hw").textContent = handsFree ? "HEY " + NAME.toUpperCase() + " ON" : "HEY " + NAME.toUpperCase() + " OFF"; $("hw").classList.toggle("on", handsFree); }
+$("hw").onclick = async () => {
+  handsFree = !handsFree; try { localStorage.setItem("jarvisWake", handsFree ? "1" : "0"); } catch (e) {}
+  showWake();
+  if (!handsFree && mode === "wake") micOff();
+  else if (handsFree && mode === "off") { unlockAudio(); if (await micOn()) { await actx.resume(); mode = "wake"; } }
+};
+showWake();
+// back on the page: listen again (Chrome allows it once he has tapped this page before); away: mic off
+document.addEventListener("visibilitychange", async () => {
+  if (document.hidden) { micOff(); return; }
+  if (handsFree && navigator.userActivation && navigator.userActivation.hasBeenActive && await micOn()) {
+    try { await actx.resume(); } catch (e) {}
+    if (actx && actx.state === "running") mode = "wake";
+  }
+});
+
+// ---------------------------------------------------------------- typing, buttons, Yes / No
+async function send(text) {
+  text = text.trim(); if (!text) return;
+  you(text); $("yn").classList.add("hide");
+  if (/^(?:what'?s|show me|what is) (?:on )?(?:my|the) screen\??$/i.test(text)) return screen();
+  setState("thinking"); reply("");
+  try { show(await follow(await (await api("/api/ask", { text, speak: pcVoice })).json(), false)); }
+  catch (e) { failed(e); } finally { setState(hud.online ? "idle" : "offline"); }
+}
+// "On it." comes first while she works (typing a mail), then the rest of the same turn
+async function follow(msg, voiced) {
+  while (msg && msg.progress) {
+    show({ cards: msg.cards, reply: msg.progress });
+    if (voiced) await play(msg.audio);
+    setState("thinking");
+    msg = await (await api("/api/next", { turn: msg.turn, voice: voiced })).json();
+  }
+  return msg;
+}
+document.querySelectorAll("#yn .hb").forEach((b) => b.onclick = async () => {
+  const yes = b.dataset.yes === "1", turn = pending; pending = null; $("yn").classList.add("hide");
+  you(yes ? "Yes" : "No"); setState("thinking");
+  try { show(await follow(await (await api("/api/answer", { turn, yes })).json(), false)); } catch (e) { failed(e); }
+  finally { setState(hud.online ? "idle" : "offline"); }
+});
+async function screen() {
+  setState("thinking"); cards(["Screenshot"]);
+  try {
+    const blob = await (await api("/api/screen")).blob();
+    $("shot").querySelector("img").src = URL.createObjectURL(blob); $("shot").classList.remove("hide");
+  } catch (e) { failed(e); } finally { setState(hud.online ? "idle" : "offline"); }
+}
+$("shot").onclick = () => $("shot").classList.add("hide");
+$("bar").onsubmit = (e) => { e.preventDefault(); const t = $("text").value; $("text").value = ""; $("text").blur(); send(t); };
+
+// ---------------------------------------------------------------- online / readouts (real numbers from the PC)
+async function ping() {
+  try {
+    const s = await (await api("/api/status")).json();
+    hud.online = true; hud.cpu = s.cpu; hud.mem = s.mem;
+    if (hud.state === "offline") setState("idle");
+  } catch (e) {
+    hud.online = false; hud.cpu = hud.mem = null;
+    if (hud.state === "idle") setState("offline");
+    if (!key) note("This phone isn't paired yet. On the PC run: python -m remote.pair and scan the QR code.");
+  }
+}
+ping(); setInterval(() => { if (!document.hidden) ping(); }, 4000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) ping(); });
+</script>
+</body>
+</html>
