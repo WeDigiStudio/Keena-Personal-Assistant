@@ -25,12 +25,12 @@ Plan for **45 to 60 minutes**, most of it downloads.
 ### Check your hardware
 
 Keena runs her language model and her speech recognition on your graphics card. **An NVIDIA GPU with at least 8 GB
-of VRAM is required.**
+of VRAM is recommended.** AMD Radeon cards with 8 GB+ work experimentally (see below).
 
 | Component | Minimum | Recommended |
 |---|---|---|
 | Operating system | Windows 10 / 11, 64-bit | Windows 11 |
-| Graphics card | NVIDIA RTX, 8 GB VRAM | NVIDIA, 12 GB+ VRAM |
+| Graphics card | NVIDIA RTX, 8 GB VRAM (or AMD Radeon 8 GB+, experimental) | NVIDIA, 12 GB+ VRAM |
 | Memory (RAM) | 16 GB | 32 GB |
 | Processor | 6 cores | 8 cores or more |
 | Storage | 20 GB free, SSD | 40 GB free, SSD |
@@ -39,7 +39,15 @@ of VRAM is required.**
 To see your graphics card: press `Ctrl + Shift + Esc` to open Task Manager, choose **Performance**, then **GPU**.
 The name is at the top right; **Dedicated GPU memory** must be 8.0 GB or more.
 
-> **Not supported:** macOS, Linux, AMD and Intel graphics cards.
+### NVIDIA or AMD?
+
+| GPU | Status | What changes |
+|---|---|---|
+| NVIDIA RTX, 8 GB+ | Recommended, tested | Nothing: follow this guide as written |
+| AMD Radeon, 8 GB+, supported by Ollama (mainly RX 6800 and newer, RX 7000 series) | Experimental, untested | The brain runs on the Radeon through Ollama; speech recognition runs on the CPU, so each command is about 1-1.5 s slower. Follow the **AMD** notes in steps 2.1, 3.3 and 4.1. |
+| Intel Arc, integrated graphics | Not supported | The brain would run on the CPU and be far too slow |
+
+> **Not supported:** macOS and Linux.
 
 ### What you will set up
 
@@ -55,18 +63,20 @@ The name is at the top right; **Dedicated GPU memory** must be 8.0 GB or more.
 
 ## 2. Install the prerequisites
 
-### 2.1 Update the NVIDIA driver
+### 2.1 Update the graphics driver
 
-Download the latest driver for your card from [nvidia.com/drivers](https://www.nvidia.com/Download/index.aspx), or use
-the NVIDIA app, then restart the PC.
-
-**Verify.** Open PowerShell (Start menu, type *PowerShell*) and run:
+**NVIDIA:** download the latest driver from [nvidia.com/drivers](https://www.nvidia.com/Download/index.aspx), or use
+the NVIDIA app, then restart the PC. **Verify** in PowerShell (Start menu, type *PowerShell*):
 
 ```powershell
 nvidia-smi
 ```
 
 You should see your card's name and a memory total of about 8000 MiB or more.
+
+**AMD:** install the latest **AMD Software: Adrenalin Edition** from [amd.com/support](https://www.amd.com/en/support),
+then restart. **Verify** in Task Manager (**Performance**, **GPU**) that your Radeon shows 8 GB or more of dedicated
+memory, and check that your card is on Ollama's list of supported AMD GPUs (ollama.com, GPU documentation).
 
 ### 2.2 Install Python 3.11
 
@@ -109,7 +119,8 @@ ollama ps
 ```
 
 The model should answer, and `ollama ps` should show it at **100% GPU**. If it says CPU, close other GPU-heavy
-programs and check the driver.
+programs and check the driver. **AMD:** if it still says CPU, your Radeon isn't supported by Ollama; Keena would be
+too slow on that PC.
 
 ---
 
@@ -147,7 +158,8 @@ pip install -r requirements.txt
 pip install nvidia-cublas-cu12 "nvidia-cudnn-cu12==9.*"
 ```
 
-The second line installs the NVIDIA libraries that let speech recognition run on the GPU.
+The second line installs the NVIDIA libraries that let speech recognition run on the GPU. **AMD: skip the second
+line**; speech recognition will run on the processor.
 
 **Verify.**
 
@@ -171,6 +183,9 @@ Change at least this line, then save:
 ```ini
 JARVIS_USER=YourName
 ```
+
+**AMD:** also change `WHISPER_DEVICE=cuda` to `WHISPER_DEVICE=cpu`. (If you forget, Keena notices there's no
+NVIDIA card and switches to the processor by herself, with a message at startup.)
 
 Everything else already has sensible defaults. The full list of settings is in the
 [README](../README.md#configuration).
@@ -362,7 +377,9 @@ Your `.env`, `about_me.txt` and `data` folder are not affected.
 | She cuts you off mid-sentence | Silence detected too early | Raise `SILENCE_SECONDS` (for example to `0.9`) or lower `SILENCE_RMS`. |
 | She keeps listening after you stop | Background noise above the threshold | Raise `SILENCE_RMS`; use a headset. |
 | No voice, or *Voice error 403* | Internet issue or an outdated voice package | Check the connection; run `pip install -U edge-tts`. |
-| Whisper GPU error at startup | NVIDIA libraries missing | Re-run the `nvidia-cublas-cu12` / `nvidia-cudnn-cu12` line from 3.3. She falls back to the CPU meanwhile. |
+| Whisper GPU error at startup | NVIDIA libraries missing, or an AMD card | NVIDIA: re-run the `nvidia-cublas-cu12` / `nvidia-cudnn-cu12` line from 3.3. AMD: set `WHISPER_DEVICE=cpu`. She falls back to the CPU meanwhile. |
+| AMD: replies very slow, `ollama ps` shows CPU | Radeon not supported by Ollama, or old driver | Update AMD Adrenalin; check Ollama's supported GPU list. |
+| AMD: commands feel about a second slower | Speech recognition runs on the CPU | Expected on AMD; a faster CPU helps. |
 | Gmail opens a Google marketing page | Her browser isn't signed in | Sign in once in her Chrome window (section 6). |
 | *Web search isn't set up* | No LangSearch key | Add `LANGSEARCH_API_KEY` to `.env` and restart. |
 | Tamil isn't understood | No Gemini key, or the free daily limit was reached | Add `GEMINI_API_KEY`; after the daily limit she uses English recognition until the next day. |

@@ -7,7 +7,7 @@ Talk to her in English, Tamil or Tanglish. She answers in a natural voice, remem
 and actually gets things done on your computer.
 
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6)
-![GPU](https://img.shields.io/badge/GPU-NVIDIA%208%20GB%20VRAM-76B900)
+![GPU](https://img.shields.io/badge/GPU-8%20GB%20VRAM%20(NVIDIA%20%7C%20AMD%20experimental)-76B900)
 ![Model](https://img.shields.io/badge/brain-Qwen%203%208B%20(local)-E8338A)
 ![Python](https://img.shields.io/badge/python-3.11-3776AB)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey)
@@ -55,7 +55,7 @@ On an 8 GB card roughly 6.8 GB is in use, which is why 8 GB of VRAM is the pract
 | Component | Minimum | Recommended |
 |---|---|---|
 | Operating system | Windows 10 / 11, 64-bit | Windows 11 |
-| Graphics card | **NVIDIA RTX, 8 GB VRAM** (RTX 2070/2080, 3060 8 GB, 3060 Ti, 3070, 4060, 4060 Ti) | NVIDIA, 12 GB+ VRAM (RTX 3060 12 GB, 4070 or better) |
+| Graphics card | **NVIDIA RTX, 8 GB VRAM** (RTX 2070/2080, 3060 8 GB, 3060 Ti, 3070, 4060, 4060 Ti), or an AMD Radeon with 8 GB+ (experimental, see below) | NVIDIA, 12 GB+ VRAM (RTX 3060 12 GB, 4070 or better) |
 | Memory (RAM) | 16 GB | 32 GB |
 | Processor | 6 cores (Intel Core i5 10th gen / AMD Ryzen 5 3600) | 8 cores or more |
 | Storage | 20 GB free, SSD | 40 GB free, SSD |
@@ -63,8 +63,20 @@ On an 8 GB card roughly 6.8 GB is in use, which is why 8 GB of VRAM is the pract
 | Peripherals | Microphone and speakers | Headset or USB microphone |
 | Network | Internet connection (voice, web, Tamil) | Stable broadband |
 
-**Not supported:** macOS and Linux (Keena automates Windows itself), AMD and Intel GPUs (speech recognition uses
-NVIDIA CUDA). Cards with 6 GB can run the smaller `qwen3:4b-instruct` model with reduced quality.
+### Graphics card support
+
+| GPU | Status | Brain (Qwen 3 8B) | Speech recognition (Whisper) |
+|---|---|---|---|
+| **NVIDIA RTX, 8 GB+** | **Recommended, tested** | GPU | GPU, about 0.2 s per sentence |
+| **AMD Radeon, 8 GB+**, supported by Ollama (mainly RX 6800 and newer, RX 7000 series) | **Experimental, untested** | GPU, via Ollama's AMD support | CPU, about 1-1.5 s per sentence |
+| Intel Arc, integrated graphics | Not supported | CPU only, too slow | CPU |
+
+Whisper's GPU mode needs NVIDIA CUDA, so on AMD it runs on the processor: Keena works the same, but every command
+takes about 1-1.5 s longer (measured: 1.4 s for a 5.5-second sentence on the CPU, versus about 0.2 s on an RTX 4060).
+Set `WHISPER_DEVICE=cpu` in `.env`, and check Ollama's list of supported AMD cards; `ollama ps` must show **GPU**.
+
+**Not supported:** macOS and Linux (Keena automates Windows itself). Cards with 6 GB can run the smaller
+`qwen3:4b-instruct` model with reduced quality.
 
 ## Quick start
 
@@ -88,7 +100,7 @@ cd keena
 py -3.11 -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
-pip install nvidia-cublas-cu12 "nvidia-cudnn-cu12==9.*"
+pip install nvidia-cublas-cu12 "nvidia-cudnn-cu12==9.*"   # NVIDIA only: skip on AMD
 ```
 
 **4. Configure**
@@ -98,7 +110,7 @@ copy .env.example .env
 notepad .env
 ```
 
-Set `JARVIS_USER` to your name. Optionally add the two free API keys described under [Configuration](#configuration),
+Set `JARVIS_USER` to your name (on AMD, also set `WHISPER_DEVICE=cpu`). Optionally add the two free API keys described under [Configuration](#configuration),
 and create an `about_me.txt` profile (one fact per line, for example `City: Chennai`).
 
 **5. Run**
@@ -264,7 +276,8 @@ Safety rules are enforced in code, not only in prompts:
 | She never hears "Hey Keena" | Run `python main.py --mic-test`, set `MIC_DEVICE`, adjust `SILENCE_RMS`. |
 | She cuts you off / keeps listening | Raise or lower `SILENCE_RMS` and `SILENCE_SECONDS`. |
 | No voice, or *Voice error 403* | Check the internet connection; run `pip install -U edge-tts`. |
-| Whisper GPU errors at startup | Reinstall `nvidia-cublas-cu12` and `nvidia-cudnn-cu12` (Quick start, step 3). |
+| Whisper GPU errors at startup | NVIDIA: reinstall `nvidia-cublas-cu12` and `nvidia-cudnn-cu12` (Quick start, step 3). AMD: set `WHISPER_DEVICE=cpu`. |
+| AMD: `ollama ps` shows CPU | Your Radeon isn't supported by Ollama, or the driver is old: update AMD Adrenalin and check Ollama's GPU list. |
 | Gmail shows a Google sign-up page | Sign in to Gmail once in Keena's own Chrome window. |
 | *Web search isn't set up* | Add `LANGSEARCH_API_KEY` to `.env`. |
 | Tamil isn't understood | Add `GEMINI_API_KEY` to `.env`; free keys have a daily limit. |
@@ -315,7 +328,11 @@ tiers. You need suitable hardware.
 **Why does she reply in English when I speak Tamil?** Spoken Tamil from small local models was not good enough, so she
 understands Tamil and answers in English by design.
 
-**Will it run on a laptop?** Yes, with an NVIDIA RTX GPU with 8 GB of VRAM and 16 GB of RAM. Keep it plugged in.
+**Does it work on AMD graphics?** Experimentally, yes: the brain runs on a supported Radeon card through Ollama, and
+speech recognition runs on the processor, so each command is about 1-1.5 s slower. It hasn't been tested on AMD yet.
+
+**Will it run on a laptop?** Yes, with an NVIDIA RTX GPU with 8 GB of VRAM (or a supported AMD Radeon) and 16 GB of
+RAM. Keep it plugged in.
 
 ## Acknowledgements
 

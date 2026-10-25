@@ -84,7 +84,15 @@ class SpeechToText:
     def _load(self, device):
         compute = "int8_float16" if device == "cuda" else "int8"  # int8 on GPU = less VRAM
         self.device = device
-        self.model = WhisperModel(self.size, device=device, compute_type=compute)
+        try:
+            self.model = WhisperModel(self.size, device=device, compute_type=compute)
+        except Exception as e:
+            if device != "cuda":
+                raise
+            # no NVIDIA card (AMD / Intel) or no CUDA libraries: hearing runs on the CPU instead of stopping Keena
+            print(f"[Whisper can't use the GPU ({str(e)[:80]}): using the CPU. On AMD / Intel set WHISPER_DEVICE=cpu]")
+            self.device = "cpu"
+            self.model = WhisperModel(self.size, device="cpu", compute_type="int8")
         self._warm_up()
 
     def _warm_up(self):
